@@ -12,6 +12,7 @@ import requests
 import subprocess
 import json
 import yaml
+import sys
 
 from dotenv import load_dotenv
 
@@ -33,6 +34,8 @@ if "CX_REGION" in os.environ:
 
 if 'CX_BACKUPS_GIT_REPO_URL' in os.environ:
   git_repo_url = os.environ['CX_BACKUPS_GIT_REPO_URL']
+  if not 'CX_BACKUPS_DO_GIT' in os.environ:
+    os.environ['CX_BACKUPS_DO_GIT'] = 'true'
 
 workdir = './'
 if 'CX_BACKUPS_WORKDIR' in os.environ:
@@ -71,6 +74,29 @@ http_endpoint = http_endpoints[region]
 write_files = 1
 
 def main():
+
+  # Handle restores
+  if len(sys.argv) > 1 and sys.argv[1] == 'restore':
+    if not len(sys.argv) == 3:
+      print("Usage: cx-backups restore <path-to-file>")
+      exit();
+    file = sys.argv[2]
+    print(f"Restoring {file}")
+    definition = None
+    with open(file, 'r') as f:
+      definition = json.load(f)
+    if 'alertDef' in definition:
+      restore_alert(definition['alertDef'])
+    elif 'dashboard' in definition:
+      restore_dashboard(definition)
+    elif 'e2m' in definition:
+      restore_e2m(definition)
+    elif 'ruleGroups' in definition:
+      print("Restoring of Parsing Rules not supported yet")
+    else:
+      print("This file doesn't appear to be a cx-backup output")
+    exit()
+
   if 'CX_BACKUPS_GIT_REPO_URL' in os.environ:
 
     logging.info(f"git cloning '{git_repo_url}' into '{workdir}'")
@@ -95,10 +121,12 @@ def main():
 
   alerts_defs = get_alerts_definitions();
   if 'alertDefs' in alerts_defs:
+    files_written = [];
     for alertdef in alerts_defs['alertDefs']:
       alert = get_alert(alertdef['id'])
       filename = alertdef['alertDefProperties']['name'] + '::' + alertdef['id']
-      write_json_to_file(alert, 'alerts', filename)
+      files_written.append( os.path.basename( write_json_to_file(alert, 'alerts', filename)))
+    delete_unwritten_files('alerts', files_written)
   else:
     logging.info("No alerts found")
 
@@ -106,6 +134,7 @@ def main():
   db_folders = catalog['folders']
   db_catalog = catalog['dashboards']
   dashboard_summaries = {}
+  files_written = [];
   for dashboard_id in db_catalog:
     board = get_dashboard(dashboard_id)
     summary = summarise_board(board)
@@ -121,8 +150,10 @@ def main():
         dashboard_summaries[ '_root_folder'] = []
       dashboard_summaries['_root_folder'].append(summary)
     filename = board["dashboard"]["name"] + '::' + board["dashboard"]["id"]
-    write_json_to_file(board, 'dashboards', filename)
+    files_written.append( os.path.basename(write_json_to_file(board, 'dashboards', filename)) )
     write_yaml_to_file(dashboard_summaries, '', 'dashboards')
+  delete_unwritten_files('dashboards', files_written)
+
 
   os.chdir(workdir_fullpath)
   if 'CX_BACKUPS_DO_GIT' in os.environ:
@@ -133,22 +164,32 @@ def main():
 
 # Alerts
 def get_alert(id):
-  alert = api_request(f"/mgmt/openapi/v3/alert-defs/{id}")
+  alert = api_request('GET', f"/mgmt/openapi/v3/alert-defs/{id}")
   return alert
 
 def get_alerts_definitions():
-  definitions = api_request('/mgmt/openapi/v3/alert-defs?')
+  definitions = api_request('GET', '/mgmt/openapi/v3/alert-defs?')
   write_json_to_file(definitions, '', 'alert-definitions')
   return(definitions)
 
+def restore_alert(definition):
+  old_alert = get_alert(definition['id'])
+  if old_alert == None:
+    method = 'POST'
+    data = definition['alertDefProperties']
+  else:
+    method = 'PUT'
+    data = definition
+  response = api_request(method, '/mgmt/openapi/v3/alert-defs', data)
+  print(f"Restored alert '{response['alertDef']['alertDefProperties']['name']}' as {response['alertDef']['id']} (previous id was {definition['id']}")
 
 # Dashboards
 def get_dashboard(id):
-  board = api_request(f"/mgmt/openapi/v1/dashboards/dashboards/{id}")
+  board = api_request('GET', f"/mgmt/openapi/v1/dashboards/dashboards/{id}")
   return board
 
 def get_dashboard_catalog():
-  catalog = api_request('/mgmt/openapi/v1/dashboards/catalog')
+  catalog = api_request('GET', '/mgmt/openapi/v1/dashboards/catalog')
   write_json_to_file(catalog, '', 'dashboard-catalog')
   boards = {}
   folders = {}
@@ -159,6 +200,19 @@ def get_dashboard_catalog():
 
   catalog = { "dashboards": boards, "folders": folders}
   return catalog
+
+def restore_dashboard(dashboard):
+  dashboard_id = dashboard['dashboard']['id']
+  old_dashboard = get_dashboard(dashboard_id)
+  if old_dashboard == None:
+    method = 'POST'
+    data = dashboard
+  else:
+    method = 'PUT'
+    data = dashboard
+  response = api_request(method, '/mgmt/openapi/v1/dashboards/dashboards', data)
+  if response is not None:
+    print(f"Restored dashboard '{dashboard['dashboard']['name']}' as {dashboard_id}")
 
 def summarise_board(dashboard):
   summary = {
@@ -225,6 +279,9 @@ def summarise_board(dashboard):
                         q['query'] = queryDef['query']['logs']['luceneQuery']['value']
                       else:
                         q['query'] = ''
+                    elif lang == 'spans':
+                      q['query_language'] = 'spans'
+                      q['query'] = queryDef['query']['spans']['luceneQuery']['value']
                     else:
                       logging.error(f"Found unknown query language '{lang}' in dashboard '{dashboard['dashboard']['name']}'")
                       q['error'] = f"Unknown language '{lang}'"
@@ -236,16 +293,40 @@ def summarise_board(dashboard):
 
 # E2M
 def get_e2ms():
-  list = api_request('/mgmt/openapi/api/v2/events2metrics')
+  list = api_request('GET', '/mgmt/openapi/api/v2/events2metrics')
   if 'e2m' in list:
     for e2m in list['e2m']:
       filename = '::'.join([str(e2m['name']), e2m['id']])
       write_json_to_file(list, 'events2metrics', filename)
 
+def get_e2m(e2m_id):
+  #TODO: Docs are wrong here
+  e2m = api_request('GET', f"/mgmt/openapi/api/v2/events2metrics/{e2m_id}")
+  return(e2m)
+
+
+def restore_e2m(e2m):
+  e2m_id = e2m['e2m'][0]['id']
+  print(e2m_id)
+  old_e2m = get_e2m(e2m_id)
+  print(old_e2m)
+  print("=====")
+  if old_e2m == None:
+    method = 'POST'
+    data = e2m['e2m'][0]
+  else:
+    method = 'PUT'
+    data = e2m
+  response = api_request(method, '/mgmt/openapi/api/v2/events2metrics', data)
+  if response is not None:
+    print("Restored e2m '{response['e2m']['name']}' as {response['e2m']['id']}")
+  else:
+    print("Failed!")
+
 # Parsing Rules
 
 def get_parsing_rule_groups():
-  rule_groups = api_request('/mgmt/openapi/api/v1/rulegroups');
+  rule_groups = api_request('GET', '/mgmt/openapi/api/v1/rulegroups');
   if 'ruleGroups' in rule_groups:
     for rule_group in rule_groups['ruleGroups']:
       filename = '::'.join([str(rule_group['order']), rule_group['name'], rule_group['id']])
@@ -256,13 +337,31 @@ def get_parsing_rule_groups():
 
 # Utils
 
-def api_request(path, data = ()):
+def api_request(method, path, data = ()):
   url = http_endpoint + path
   logging.debug('Key: ' + api_key)
-  logging.debug(f"Hitting {url}")
+  logging.debug(f"{method}ing {url}")
   headers = {"Authorization": "Bearer " + api_key}
-  response = requests.request("GET", url, headers=headers)
-  return json.loads(response.text)
+  if method == 'POST' or method == 'PUT':
+    response = requests.request(method, url, json=data, headers=headers)
+  elif method == 'GET':
+    response = requests.request(method, url, headers=headers)
+  else:
+    print(f"Unknown method '{method}'")
+    exit();
+
+  if response.status_code == 200:
+    return json.loads(response.text)
+  elif response.status_code == 404:
+    return None
+  else:
+    print("ERROR")
+    print("RESPONSE:")
+    print(response.text)
+    logging.debug("REQUEST DATA")
+    logging.debug(data)
+    logging.debug("ABORTING")
+    exit()
 
 def get_file_path(type, filename, ext, subdir=''):
   dirpath = './'
@@ -275,12 +374,24 @@ def get_file_path(type, filename, ext, subdir=''):
   filepath = dirpath + '/' + filename + '.' + ext
   return(dirpath, filepath)
 
+def delete_unwritten_files(type, written_filenames, subdir=''):
+  if 'CX_BACKUPS_DO_GIT' in os.environ and not 'CX_BACKUPS_NO_DELETE_REMOVED_OBJECTS' in os.environ:
+    dirpath = get_file_path(type, '', '', subdir)[0]
+    cwd = os.getcwd()
+    os.chdir(dirpath)
+    for file in os.listdir('.'):
+      if os.path.isfile(file) and not file in written_filenames:
+        logging.debug(f"Clearing up old file '{file}' in dir 'dirpath'")
+        git_rm(file)
+    os.chdir(cwd)
+
 def write_yaml_to_file(data, type, filename, subdir=''):
   dirpath,filepath = get_file_path(type, filename, 'yaml', subdir)
   if not os.path.exists(dirpath):
     os.makedirs(dirpath)
   with open(filepath, 'w', encoding='utf-8') as f:
     yaml.dump(data, f, indent=2, sort_keys=True)
+  return filepath
 
 def write_json_to_file(data, type, filename, subdir=''):
   dirpath,filepath = get_file_path(type, filename, 'json', subdir)
@@ -288,6 +399,7 @@ def write_json_to_file(data, type, filename, subdir=''):
     os.makedirs(dirpath)
   with open(filepath, 'w', encoding='utf-8') as f:
     json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
+  return filepath
 
 # Git shennanigans
 # TODO: Any error handling at all would be nice!
@@ -306,5 +418,8 @@ def git_push():
 
 def git_init():
   subprocess.run(['git', 'init'])
+
+def git_rm(file):
+  subprocess.run(['git', 'rm', file])
 
 main()
