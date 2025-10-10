@@ -1,8 +1,8 @@
 # coralogix-backups
 
-A quick-and-dirty script to toy with the idea of 'offsite backups' of Coralogix configs.
+A quick-and-dirty script to toy with the idea of 'offsite backups' of Coralogix configs
 
-Run most-simply, will download all your dashboards and alerts to local files. A `cx-backups.d` directory will be created and inside there one more for each thing backed up - `alerts`, `dashboards`, `events2metrics` and `parsing-rules`.
+Run most-simply, will download all your dashboards, alerts, e2m definitions and parsing rules to local files. A `cx-backups.d` directory will be created and inside there one more for each thing backed up - `alerts`, `dashboards`, `events2metrics` and `parsing-rules`.
 
 Each of these will contain one JSON file per thing-backed-up; one for each alert, dashboard, e2m rule and parsing-rule group.
 
@@ -24,7 +24,13 @@ Storage_Pi::jEv2PulBFLW2QCOUlJP41.json
 broken_test::4cunUCamVxgCPobCUmK78.json
 ```
 
-I've not yet needed it, so there isn't currently a cx-restore tool :D
+# Restoring
+
+Restoring is done one file at a time, the usage is:
+
+    cx-backups restore [path-to-file]
+
+where the file is a file defining a single backed-up entity; one dashboard, one alert or one e2m rule. Parsing Rules are not supported yet, and nor are dashboard folders.
 
 # Git version-tracking
 
@@ -59,13 +65,22 @@ On something Debian based you need `sudo apt-get install python3 python3-request
 
 On anything else, get Python installed and do `pip install -r requirements.txt`
 
-There are no supported arguments; everything is set via environment veriables:
+There are no supported argument options; everything is set via environment variables:
 
 Required:
   * CX_API_KEY - your Coralogix API key for API access. Should be a Personal key, not a send-your-data one.
   * CX_REGION  - the three-character name of the region your CX is in (EU0, EU2, etc.)
 
 Optional:
-  * CX_BACKUPS_WORKDIR            - the dir to write backups to. Defaults to ./cx-backups.d unless git is being used where it is instead /tmp/cx-backups
-  * CX_BACKUPS_GIT_REPO_URL       - the SSH URL of the git repo to commit to. If unset, git is not used at all
-  * CX_BACKUPS_GIT_COMMIT_MESSAGE - A commit message; defaults to 'cx-backups ' appended with the date
+  * CX_BACKUPS_DO_GIT             - Use git locally; set CX_BACKUPS_GIT_REPO_URL to use a remote repository, set this to just use git locally in the backups dir
+  * CX_BACKUPS_WORKDIR            - Path to the dir to write backups to. Defaults to ./cx-backups.d unless git is being used where the default is instead /tmp/cx-backups
+  * CX_BACKUPS_GIT_REPO_URL       - SSH URL of the git repo to commit to. If neither this nor CX_BACKUPS_DO_GIT is set, git is not used at all
+  * CX_BACKUPS_GIT_COMMIT_MESSAGE - The commit message to use on git operations; defaults to 'cx-backups ' appended with the date
+  * CX_BACKUPS_NO_DELETE_REMOVED  - By default, json backup files for things that have been deleted are git-rmed; this supresses that behaviour
+
+# Limitations
+
+There are a few. This is partly written because I needed to do something, and the rest is because given that first thing, how hard can another be?
+
+* Cannot restore events2metrics
+* Cannot restore parsing rules
