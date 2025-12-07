@@ -20,6 +20,8 @@ logging.basicConfig(encoding='utf-8', level=logging.INFO)
 if 'LOGLEVEL' in os.environ:
   logging.getLogger().setLevel(os.environ['LOGLEVEL'])
 
+if 'DEBUG' in os.environ:
+  logging.getLogger().setLevel('DEBUG')
 
 if "CX_API_KEY" in os.environ:
   api_key = os.environ['CX_API_KEY']
