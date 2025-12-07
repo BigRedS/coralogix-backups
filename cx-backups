@@ -13,16 +13,12 @@ import subprocess
 import json
 import yaml
 import sys
-
-from dotenv import load_dotenv
+import time
 
 logging.basicConfig(encoding='utf-8', level=logging.INFO)
 if 'LOGLEVEL' in os.environ:
   logging.getLogger().setLevel(os.environ['LOGLEVEL'])
 
-if os.path.exists('.env'):
-  logging.info("Reading dotenv file at ./.env")
-  load_dotenv('.env')
 
 if "CX_API_KEY" in os.environ:
   api_key = os.environ['CX_API_KEY']
@@ -37,7 +33,7 @@ if 'CX_BACKUPS_GIT_REPO_URL' in os.environ:
   if not 'CX_BACKUPS_DO_GIT' in os.environ:
     os.environ['CX_BACKUPS_DO_GIT'] = 'true'
 
-workdir = './'
+workdir = os.getcwd()
 if 'CX_BACKUPS_WORKDIR' in os.environ:
   workdir = os.environ['CX_BACKUPS_WORKDIR']
 elif 'CX_BACKUPS_GIT_REPO_URL' in os.environ:
@@ -153,7 +149,6 @@ def main():
     files_written.append( os.path.basename(write_json_to_file(board, 'dashboards', filename)) )
     write_yaml_to_file(dashboard_summaries, '', 'dashboards')
   delete_unwritten_files('dashboards', files_written)
-
 
   os.chdir(workdir_fullpath)
   if 'CX_BACKUPS_DO_GIT' in os.environ:
@@ -281,7 +276,8 @@ def summarise_board(dashboard):
                         q['query'] = ''
                     elif lang == 'spans':
                       q['query_language'] = 'spans'
-                      q['query'] = queryDef['query']['spans']['luceneQuery']['value']
+                      if 'luceneQuery' in queryDef['query']['spans'] and queryDef['query']['spans']['luceneQuery'] is not None and 'value' in queryDef['query']['spans']['luceneQuery']:
+                        q['query'] = queryDef['query']['spans']['luceneQuery']['value']
                     else:
                       logging.error(f"Found unknown query language '{lang}' in dashboard '{dashboard['dashboard']['name']}'")
                       q['error'] = f"Unknown language '{lang}'"
@@ -338,6 +334,12 @@ def get_parsing_rule_groups():
 # Utils
 
 def api_request(method, path, data = ()):
+
+
+  if 'CX_API_POLITENESS_DELAY' in os.environ:
+    logging.debug(f"Sleeping for {os.environ['CX_API_POLITENESS_DELAY']} seconds")
+    time.sleep(int(os.environ['CX_API_POLITENESS_DELAY']))
+
   url = http_endpoint + path
   logging.debug('Key: ' + api_key)
   logging.debug(f"{method}ing {url}")
