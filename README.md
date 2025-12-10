@@ -63,6 +63,15 @@ Optional:
   * CX_BACKUPS_GIT_COMMIT_MESSAGE - The commit message to use on git operations; defaults to 'cx-backups ' appended with the date
   * CX_BACKUPS_NO_DELETE_REMOVED  - By default, json backup files for things that have been deleted are git-rmed; this supresses that behaviour
 
+You may also skip backups by type by setting any or a combination of these environment variables:
+
+* `CX_BACKUPS_SKIP_E2M`
+* `CX_BACKUPS_SKIP_PARSING_RULES`
+* `CX_BACKUPS_SKIP_ALERTS`
+* `CX_BACKUPS_SKIP_DASHBOARDS`
+
+This has no bearing on restores, and there is no special handling of the case where all of them are skipped
+
 # Limitations
 
 There are a few. This is partly written because I needed to do something, and the rest is because given that first thing, how hard can another be?

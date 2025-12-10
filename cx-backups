@@ -115,43 +115,56 @@ def main():
 
   # I don't yet have anything useful to do with the list of e2ms or parsing rules, and since the
   # get_* functions do the writing to disk themselves, these just sit there on their own.
-  get_e2ms()
-  get_parsing_rule_groups()
-
-  alerts_defs = get_alerts_definitions();
-  if 'alertDefs' in alerts_defs:
-    files_written = [];
-    for alertdef in alerts_defs['alertDefs']:
-      alert = get_alert(alertdef['id'])
-      filename = alertdef['alertDefProperties']['name'] + '::' + alertdef['id']
-      files_written.append( os.path.basename( write_json_to_file(alert, 'alerts', filename)))
-    delete_unwritten_files('alerts', files_written)
+  if 'CX_BACKUPS_SKIP_E2M' in os.environ:
+    logging.debug("CX_BACKUPS_SKIP_E2M set; skipping events-to-metrics backup")
   else:
-    logging.info("No alerts found")
+    get_e2ms()
 
-  catalog = get_dashboard_catalog();
-  db_folders = catalog['folders']
-  db_catalog = catalog['dashboards']
-  dashboard_summaries = {}
-  files_written = [];
-  for dashboard_id in db_catalog:
-    board = get_dashboard(dashboard_id)
-    summary = summarise_board(board)
-    #TODO: Recreate whole hierarchy of folders and subfolder
-    if 'folderId' in board['dashboard']:
-      folder_id = board['dashboard']['folderId']['value']
-      folder_name = db_folders[ folder_id ]['name']
-      if not folder_name in dashboard_summaries:
-        dashboard_summaries[ folder_name ] = []
-      dashboard_summaries[ folder_name ].append(summary)
+  if 'CX_BACKUPS_SKIP_PARSING_RULES' in os.environ:
+    logging.debug("CX_BACKUPS_SKIP_PARSING_RULES set; skipping parsing rules backup")
+  else:
+    get_parsing_rule_groups()
+
+  if 'CX_BACKUPS_SKIP_ALERTS' in os.environ:
+    logging.debug("CX_BACKUPS_SKIP_ALERTS set; skipping alerts backup")
+  else:
+    alerts_defs = get_alerts_definitions();
+    if 'alertDefs' in alerts_defs:
+      files_written = [];
+      for alertdef in alerts_defs['alertDefs']:
+        alert = get_alert(alertdef['id'])
+        filename = alertdef['alertDefProperties']['name'] + '::' + alertdef['id']
+        files_written.append( os.path.basename( write_json_to_file(alert, 'alerts', filename)))
+      delete_unwritten_files('alerts', files_written)
     else:
-      if not '_root_folder' in dashboard_summaries:
-        dashboard_summaries[ '_root_folder'] = []
-      dashboard_summaries['_root_folder'].append(summary)
-    filename = board["dashboard"]["name"] + '::' + board["dashboard"]["id"]
-    files_written.append( os.path.basename(write_json_to_file(board, 'dashboards', filename)) )
-    write_yaml_to_file(dashboard_summaries, '', 'dashboards')
-  delete_unwritten_files('dashboards', files_written)
+      logging.info("No alerts found")
+
+  if 'CX_BACKUPS_SKIP_DASHBOARDS' in os.environ:
+    logging.debug("CX_BACKUPS_SKIP_DASHBOARDS set; skipping dashboards backup")
+  else:
+    catalog = get_dashboard_catalog();
+    db_folders = catalog['folders']
+    db_catalog = catalog['dashboards']
+    dashboard_summaries = {}
+    files_written = [];
+    for dashboard_id in db_catalog:
+      board = get_dashboard(dashboard_id)
+      summary = summarise_board(board)
+      #TODO: Recreate whole hierarchy of folders and subfolder
+      if 'folderId' in board['dashboard']:
+        folder_id = board['dashboard']['folderId']['value']
+        folder_name = db_folders[ folder_id ]['name']
+        if not folder_name in dashboard_summaries:
+          dashboard_summaries[ folder_name ] = []
+        dashboard_summaries[ folder_name ].append(summary)
+      else:
+        if not '_root_folder' in dashboard_summaries:
+          dashboard_summaries[ '_root_folder'] = []
+        dashboard_summaries['_root_folder'].append(summary)
+      filename = board["dashboard"]["name"] + '::' + board["dashboard"]["id"]
+      files_written.append( os.path.basename(write_json_to_file(board, 'dashboards', filename)) )
+      write_yaml_to_file(dashboard_summaries, '', 'dashboards')
+    delete_unwritten_files('dashboards', files_written)
 
   os.chdir(workdir_fullpath)
   if 'CX_BACKUPS_DO_GIT' in os.environ:
