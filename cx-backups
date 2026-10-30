@@ -284,27 +284,31 @@ def summarise_board(dashboard):
                       q['tier'] = 'unknown: ' + queryDef[lang]['dataModeType']
                   else:
                     q['tier'] = ''
-                  for lang in queryDef['query']:
-                    if lang == 'dataprime':
-                      q['query_language'] = 'dataprime'
-                      q['query'] = queryDef['query']['dataprime']['dataprimeQuery']['text']
-                    elif lang =='metrics':
-                      q['query_language'] = 'promql'
-                      q['query'] = queryDef['query']['metrics']['promqlQuery']['value']
-                    elif lang == 'logs':
-                      q['query_language'] = 'lucene'
-                      #TODO: Actually learn Python and come back and not do this:
-                      if 'luceneQuery' in queryDef['query']['logs'] and queryDef['query']['logs']['luceneQuery'] is not None and 'value' in queryDef['query']['logs']['luceneQuery']:
-                        q['query'] = queryDef['query']['logs']['luceneQuery']['value']
+                  if queryDef['query'] == None:
+                    q['query_language'] = 'None'
+                    q['query'] = 'None'
+                  else:
+                    for lang in queryDef['query']:
+                      if lang == 'dataprime':
+                        q['query_language'] = 'dataprime'
+                        q['query'] = queryDef['query']['dataprime']['dataprimeQuery']['text']
+                      elif lang =='metrics':
+                        q['query_language'] = 'promql'
+                        q['query'] = queryDef['query']['metrics']['promqlQuery']['value']
+                      elif lang == 'logs':
+                        q['query_language'] = 'lucene'
+                        #TODO: Actually learn Python and come back and not do this:
+                        if 'luceneQuery' in queryDef['query']['logs'] and queryDef['query']['logs']['luceneQuery'] is not None and 'value' in queryDef['query']['logs']['luceneQuery']:
+                          q['query'] = queryDef['query']['logs']['luceneQuery']['value']
+                        else:
+                          q['query'] = ''
+                      elif lang == 'spans':
+                        q['query_language'] = 'spans'
+                        if 'luceneQuery' in queryDef['query']['spans'] and queryDef['query']['spans']['luceneQuery'] is not None and 'value' in queryDef['query']['spans']['luceneQuery']:
+                          q['query'] = queryDef['query']['spans']['luceneQuery']['value']
                       else:
-                        q['query'] = ''
-                    elif lang == 'spans':
-                      q['query_language'] = 'spans'
-                      if 'luceneQuery' in queryDef['query']['spans'] and queryDef['query']['spans']['luceneQuery'] is not None and 'value' in queryDef['query']['spans']['luceneQuery']:
-                        q['query'] = queryDef['query']['spans']['luceneQuery']['value']
-                    else:
-                      logging.error(f"Found unknown query language '{lang}' in dashboard '{dashboard['dashboard']['name']}'")
-                      q['error'] = f"Unknown language '{lang}'"
+                        logging.error(f"Found unknown query language '{lang}' in dashboard '{dashboard['dashboard']['name']}'")
+                        q['error'] = f"Unknown language '{lang}'"
                   w['queries'].append(q)
             r['widgets'].append(w)
         s['rows'].append(r)
